@@ -34,6 +34,7 @@ face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refi
 EYE_AR_THRESHOLD = 0.25
 YAWN_AR_THRESHOLD = 0.6
 HEAD_BEND_THRESHOLD = 15
+
 EYE_AR_CONSEC_FRAMES = 15
 MOUTH_OPEN_CONSEC_FRAMES = 7
 HEAD_BEND_CONSEC_FRAMES = 10
@@ -79,6 +80,49 @@ def head_bend_distance(landmarks):
     vertical_distance = nose_tip[1] - eyes_midpoint[1]
     return vertical_distance
 
+# --- 🔥 NEW Fatigue Detection Model ---
+class FatigueDetectionModel:
+    def __init__(self):
+        self.eye_counter = 0
+        self.mouth_open_counter = 0
+        self.head_bend_counter = 0
+
+    def detect(self, landmark_points):
+        fatigue_event = None
+
+        avg_ear = (eye_aspect_ratio(landmark_points, left=True) + eye_aspect_ratio(landmark_points, left=False)) / 2.0
+        mar = mouth_aspect_ratio(landmark_points)
+        vertical_distance = head_bend_distance(landmark_points)
+
+        # Eyes Closure Detection
+        if avg_ear < EYE_AR_THRESHOLD:
+            self.eye_counter += 1
+            if self.eye_counter >= EYE_AR_CONSEC_FRAMES:
+                fatigue_event = "Eyes Closed"
+                self.eye_counter = 0
+        else:
+            self.eye_counter = 0
+
+        # Yawning Detection
+        if mar > YAWN_AR_THRESHOLD:
+            self.mouth_open_counter += 1
+            if self.mouth_open_counter >= MOUTH_OPEN_CONSEC_FRAMES:
+                fatigue_event = "Yawning"
+                self.mouth_open_counter = 0
+        else:
+            self.mouth_open_counter = 0
+
+        # Head Down Detection
+        if vertical_distance > HEAD_BEND_THRESHOLD:
+            self.head_bend_counter += 1
+            if self.head_bend_counter >= HEAD_BEND_CONSEC_FRAMES:
+                fatigue_event = "Head Down"
+                self.head_bend_counter = 0
+        else:
+            self.head_bend_counter = 0
+
+        return fatigue_event
+
 # Sidebar
 with st.sidebar:
     st.header("Alert Settings")
@@ -89,12 +133,10 @@ with st.sidebar:
     all_alert = st.checkbox("Detect All", value=True)
     sound_option = st.radio("Select Alert Sound", ["beep", "buzzer", "horn"])
 
-# Transformer class for webcam
+# Webcam Transformer
 class VideoTransformer(VideoTransformerBase):
     def __init__(self, volume, eye_alert, head_alert, yawn_alert, all_alert, sound_option):
-        self.eye_counter = 0
-        self.mouth_open_counter = 0
-        self.head_bend_counter = 0
+        self.model = FatigueDetectionModel()
         self.volume = volume
         self.eye_alert = eye_alert
         self.head_alert = head_alert
@@ -115,44 +157,20 @@ class VideoTransformer(VideoTransformerBase):
             ih, iw, _ = img.shape
             landmark_points = [(int(pt.x * iw), int(pt.y * ih)) for pt in landmarks.landmark]
 
-            avg_ear = (eye_aspect_ratio(landmark_points, left=True) + eye_aspect_ratio(landmark_points, left=False)) / 2.0
-            mar = mouth_aspect_ratio(landmark_points)
-            vertical_distance = head_bend_distance(landmark_points)
+            fatigue_event = self.model.detect(landmark_points)
 
-            # Detect Eyes Closure
-            if (self.eye_alert or self.all_alert) and avg_ear < EYE_AR_THRESHOLD:
-                self.eye_counter += 1
-                if self.eye_counter >= EYE_AR_CONSEC_FRAMES:
+            if fatigue_event:
+                # Respect selected alerts
+                if (self.all_alert or
+                    (self.eye_alert and fatigue_event == "Eyes Closed") or
+                    (self.yawn_alert and fatigue_event == "Yawning") or
+                    (self.head_alert and fatigue_event == "Head Down")):
+
                     threading.Thread(target=play_sound, args=(f"{self.sound_option}.wav", self.volume), daemon=True).start()
-                    alert_text = "Eyes Closed!"
+                    alert_text = fatigue_event
                     color = (0, 0, 255)
-                    self.eye_counter = 0
-            else:
-                self.eye_counter = 0
 
-            # Detect Yawning
-            if (self.yawn_alert or self.all_alert) and mar > YAWN_AR_THRESHOLD:
-                self.mouth_open_counter += 1
-                if self.mouth_open_counter >= MOUTH_OPEN_CONSEC_FRAMES:
-                    threading.Thread(target=play_sound, args=(f"{self.sound_option}.wav", self.volume), daemon=True).start()
-                    alert_text = "Yawning Detected!"
-                    color = (0, 0, 255)
-                    self.mouth_open_counter = 0
-            else:
-                self.mouth_open_counter = 0
-
-            # Detect Head Down
-            if (self.head_alert or self.all_alert) and vertical_distance > HEAD_BEND_THRESHOLD:
-                self.head_bend_counter += 1
-                if self.head_bend_counter >= HEAD_BEND_CONSEC_FRAMES:
-                    threading.Thread(target=play_sound, args=(f"{self.sound_option}.wav", self.volume), daemon=True).start()
-                    alert_text = "Head Down!"
-                    color = (0, 0, 255)
-                    self.head_bend_counter = 0
-            else:
-                self.head_bend_counter = 0
-
-            for idx, point in enumerate(landmark_points):
+            for point in landmark_points:
                 cv2.circle(img, point, 1, color, -1)
 
             if alert_text:
