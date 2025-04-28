@@ -167,11 +167,10 @@ class VideoTransformer(VideoTransformerBase):
 st.title("🚗 Driving Fatigue Detection (Simple)")
 st.title("")  # Empty line for spacing
 
-# Start webcam automatically
+# Start webcam
 webrtc_streamer(
     key="example",
     video_transformer_factory=VideoTransformer,
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
     media_stream_constraints={"video": True, "audio": False},
-    start=True,
 )
