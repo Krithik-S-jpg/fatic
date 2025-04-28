@@ -40,13 +40,14 @@ MOUTH_OPEN_CONSEC_FRAMES = 7
 HEAD_BEND_CONSEC_FRAMES = 10
 
 # Sound function
+pygame.mixer.init()
 def play_sound(sound_file, volume):
-    pygame.mixer.init()
-    pygame.mixer.music.set_volume(volume)
-    pygame.mixer.music.load(sound_file)
-    pygame.mixer.music.play()
-    while pygame.mixer.music.get_busy():
-        continue
+    try:
+        pygame.mixer.music.set_volume(volume)
+        pygame.mixer.music.load(sound_file)
+        pygame.mixer.music.play()
+    except Exception as e:
+        print(f"Error playing sound: {e}")
 
 # Helper functions
 def euclidean(p1, p2):
@@ -80,7 +81,7 @@ def head_bend_distance(landmarks):
     vertical_distance = nose_tip[1] - eyes_midpoint[1]
     return vertical_distance
 
-# --- 🔥 NEW Fatigue Detection Model ---
+# Fatigue Detection Model
 class FatigueDetectionModel:
     def __init__(self):
         self.eye_counter = 0
@@ -135,16 +136,10 @@ with st.sidebar:
 
 # Webcam Transformer
 class VideoTransformer(VideoTransformerBase):
-    def __init__(self, volume, eye_alert, head_alert, yawn_alert, all_alert, sound_option):
+    def __init__(self):
         self.model = FatigueDetectionModel()
-        self.volume = volume
-        self.eye_alert = eye_alert
-        self.head_alert = head_alert
-        self.yawn_alert = yawn_alert
-        self.all_alert = all_alert
-        self.sound_option = sound_option
 
-    def transform(self, frame):
+    def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
         frame_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         results = face_mesh.process(frame_rgb)
@@ -161,12 +156,12 @@ class VideoTransformer(VideoTransformerBase):
 
             if fatigue_event:
                 # Respect selected alerts
-                if (self.all_alert or
-                    (self.eye_alert and fatigue_event == "Eyes Closed") or
-                    (self.yawn_alert and fatigue_event == "Yawning") or
-                    (self.head_alert and fatigue_event == "Head Down")):
+                if (all_alert or
+                    (eye_alert and fatigue_event == "Eyes Closed") or
+                    (yawn_alert and fatigue_event == "Yawning") or
+                    (head_alert and fatigue_event == "Head Down")):
 
-                    threading.Thread(target=play_sound, args=(f"{self.sound_option}.wav", self.volume), daemon=True).start()
+                    threading.Thread(target=play_sound, args=(f"{sound_option}.wav", volume), daemon=True).start()
                     alert_text = fatigue_event
                     color = (0, 0, 255)
 
@@ -185,6 +180,6 @@ st.title("")
 # Start webcam with streamlit-webrtc
 webrtc_streamer(
     key="example",
-    video_transformer_factory=lambda: VideoTransformer(volume, eye_alert, head_alert, yawn_alert, all_alert, sound_option),
+    video_transformer_factory=VideoTransformer,
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
 )
