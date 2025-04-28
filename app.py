@@ -1,72 +1,42 @@
 import streamlit as st
 import cv2
-import dlib
-from scipy.spatial import distance
+import mediapipe as mp
 import numpy as np
 import threading
 import pygame
 
+# Streamlit page settings
 st.set_page_config(page_title="Fatigue Detection", page_icon="🚥", layout="wide", initial_sidebar_state="collapsed")
 
+# Background CSS
 background_css = """
 <style>
-    /* Background Image */
     .stApp {
         background-image: url('https://i.pinimg.com/originals/6d/46/f9/6d46f977733e6f9a9fa8f356e2b3e0fa.gif');
         background-size: cover;
         background-position: center;
         background-attachment: fixed;
     }
-
-    /* Hide default Streamlit header */
     header {
         visibility: hidden;
     }
 </style>
 """
-
-# Inject the CSS into the page
 st.markdown(background_css, unsafe_allow_html=True)
 
+# Mediapipe setup
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5)
+
 # Constants
-EYE_AR_THRESHOLD = 0.25  # Adjusted threshold for eye aspect ratio
-YAWN_AR_THRESHOLD = 0.2
-HEAD_BEND_THRESHOLD = 20
+EYE_AR_THRESHOLD = 0.25
+YAWN_AR_THRESHOLD = 0.6
+HEAD_BEND_THRESHOLD = 15
 EYE_AR_CONSEC_FRAMES = 15
 MOUTH_OPEN_CONSEC_FRAMES = 7
 HEAD_BEND_CONSEC_FRAMES = 10
 
-# Load dlib's face detector and facial landmark predictor
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
-
-# Function to calculate eye aspect ratio (EAR)
-def eye_aspect_ratio(eye):
-    A = distance.euclidean(eye[1], eye[5])
-    B = distance.euclidean(eye[2], eye[4])
-    C = distance.euclidean(eye[0], eye[3])
-    ear = (A + B) / (2.0 * C)
-    return ear
-
-# Function to calculate mouth aspect ratio (MAR)
-def mouth_aspect_ratio(mouth):
-    A = distance.euclidean(mouth[13], mouth[19])
-    B = distance.euclidean(mouth[14], mouth[18])
-    C = distance.euclidean(mouth[15], mouth[17])
-    D = distance.euclidean(mouth[12], mouth[16])
-    mar = (A + B + C) / (2.0 * D)
-    return mar
-
-# Function to calculate vertical distance between nose tip and eyes
-def head_bend_distance(landmarks):
-    nose_tip = landmarks[30]
-    left_eye = landmarks[36]
-    right_eye = landmarks[45]
-    eyes_midpoint = ((left_eye[0] + right_eye[0]) // 2, (left_eye[1] + right_eye[1]) // 2)
-    vertical_distance = nose_tip[1] - eyes_midpoint[1]
-    return vertical_distance
-
-# Function to play sound
+# Sound function
 def play_sound(sound_file, volume):
     pygame.mixer.init()
     pygame.mixer.music.set_volume(volume)
@@ -75,35 +45,63 @@ def play_sound(sound_file, volume):
     while pygame.mixer.music.get_busy():
         continue
 
-# Streamlit app
+# Helper functions
+def euclidean(p1, p2):
+    return np.linalg.norm(np.array(p1) - np.array(p2))
+
+def eye_aspect_ratio(landmarks, left=True):
+    if left:
+        eye_indices = [33, 160, 158, 133, 153, 144]
+    else:
+        eye_indices = [362, 385, 387, 263, 373, 380]
+    points = [landmarks[i] for i in eye_indices]
+    A = euclidean(points[1], points[5])
+    B = euclidean(points[2], points[4])
+    C = euclidean(points[0], points[3])
+    ear = (A + B) / (2.0 * C)
+    return ear
+
+def mouth_aspect_ratio(landmarks):
+    mouth_indices = [78, 308, 14, 13, 87, 317]
+    points = [landmarks[i] for i in mouth_indices]
+    A = euclidean(points[2], points[3])
+    B = euclidean(points[0], points[1])
+    mar = A / B
+    return mar
+
+def head_bend_distance(landmarks):
+    nose_tip = landmarks[1]
+    left_eye = landmarks[33]
+    right_eye = landmarks[263]
+    eyes_midpoint = ((left_eye[0] + right_eye[0]) / 2, (left_eye[1] + right_eye[1]) / 2)
+    vertical_distance = nose_tip[1] - eyes_midpoint[1]
+    return vertical_distance
+
+# Title
 st.title("🚗 Driving Fatigue Management")
 st.title("")
-# Sidebar elements
+
+# Sidebar
 with st.sidebar:
     st.header("Alert Settings")
-
-    # Volume slider
     volume = st.slider("Volume", 0.0, 1.0, 0.5)
-
-    # Checkboxes
     st.session_state.eye_alert = st.checkbox("Detect Eyes Closure", value=st.session_state.get("eye_alert", False))
     st.session_state.head_alert = st.checkbox("Detect Head Down", value=st.session_state.get("head_alert", False))
     st.session_state.yawn_alert = st.checkbox("Detect Yawning", value=st.session_state.get("yawn_alert", False))
     st.session_state.all_alert = st.checkbox("Detect All", value=True)
-
-    # Radio button for sound option
     sound_option = st.radio("Select Alert Sound", ["beep", "buzzer", "horn"])
 
 # Initialize session state
 if "running" not in st.session_state:
     st.session_state.running = False
 
+# Main detection function
 def detect_fatigue():
     cap = cv2.VideoCapture(0)
+    frame_window = st.empty()
     eye_counter = 0
     mouth_open_counter = 0
     head_bend_counter = 0
-    frame_window = st.empty()
 
     while st.session_state.running:
         ret, frame = cap.read()
@@ -112,19 +110,16 @@ def detect_fatigue():
             break
 
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = detector(gray)
+        results = face_mesh.process(frame_rgb)
 
-        for face in faces:
-            landmarks = predictor(gray, face)
-            landmarks = np.array([[p.x, p.y] for p in landmarks.parts()])
-            left_eye, right_eye = landmarks[42:48], landmarks[36:42]
-            mouth = landmarks[48:68]
+        if results.multi_face_landmarks:
+            landmarks = results.multi_face_landmarks[0]
+            ih, iw, _ = frame.shape
+            landmark_points = [(int(pt.x * iw), int(pt.y * ih)) for pt in landmarks.landmark]
 
-            # Calculate the eye aspect ratio
-            avg_ear = (eye_aspect_ratio(left_eye) + eye_aspect_ratio(right_eye)) / 2.0
-            mar = mouth_aspect_ratio(mouth)
-            vertical_distance = head_bend_distance(landmarks)
+            avg_ear = (eye_aspect_ratio(landmark_points, left=True) + eye_aspect_ratio(landmark_points, left=False)) / 2.0
+            mar = mouth_aspect_ratio(landmark_points)
+            vertical_distance = head_bend_distance(landmark_points)
 
             color = (0, 255, 0)
             alert_text = ""
@@ -162,8 +157,11 @@ def detect_fatigue():
             else:
                 head_bend_counter = 0
 
-            cv2.rectangle(frame, (face.left(), face.top()), (face.right(), face.bottom()), color, 2)
-            cv2.putText(frame, alert_text, (face.left(), face.top() - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            # Draw face landmarks
+            for idx, point in enumerate(landmark_points):
+                cv2.circle(frame, point, 1, color, -1)
+
+            cv2.putText(frame, alert_text, (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
 
         frame_window.image(frame, channels="BGR", use_column_width=True)
     cap.release()
