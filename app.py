@@ -26,6 +26,16 @@ background_css = """
 """
 st.markdown(background_css, unsafe_allow_html=True)
 
+# Hide "Select Device" button
+hide_webrtc_css = """
+<style>
+    button[aria-label="Select device"] {
+        display: none !important;
+    }
+</style>
+"""
+st.markdown(hide_webrtc_css, unsafe_allow_html=True)
+
 # Mediapipe setup
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5)
@@ -155,11 +165,13 @@ class VideoTransformer(VideoTransformerBase):
 
 # Title
 st.title("🚗 Driving Fatigue Detection (Simple)")
-st.title("")
+st.title("")  # Empty line for spacing
 
-# Start webcam
+# Start webcam automatically
 webrtc_streamer(
     key="example",
     video_transformer_factory=VideoTransformer,
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+    media_stream_constraints={"video": True, "audio": False},
+    start=True,
 )
