@@ -4,8 +4,8 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import threading
-import pygame
 import av
+import streamlit.components.v1 as components
 
 # Streamlit page settings
 st.set_page_config(page_title="Fatigue Detection", page_icon="🚥", layout="wide", initial_sidebar_state="collapsed")
@@ -39,15 +39,20 @@ EYE_AR_CONSEC_FRAMES = 15
 MOUTH_OPEN_CONSEC_FRAMES = 7
 HEAD_BEND_CONSEC_FRAMES = 10
 
-# Sound function
-pygame.mixer.init()
+# Sound function (new method)
 def play_sound(sound_file, volume):
-    try:
-        pygame.mixer.music.set_volume(volume)
-        pygame.mixer.music.load(sound_file)
-        pygame.mixer.music.play()
-    except Exception as e:
-        print(f"Error playing sound: {e}")
+    sound_urls = {
+        "beep": "https://actions.google.com/sounds/v1/alarms/beep_short.ogg",
+        "buzzer": "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg",
+        "horn": "https://actions.google.com/sounds/v1/alarms/bugle_tune.ogg"
+    }
+    sound_url = sound_urls.get(sound_file.split('.')[0], sound_urls["beep"])
+    
+    components.html(f"""
+        <audio autoplay volume="{volume}">
+            <source src="{sound_url}" type="audio/ogg">
+        </audio>
+    """, height=0)
 
 # Helper functions
 def euclidean(p1, p2):
