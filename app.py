@@ -6,6 +6,7 @@ import numpy as np
 import threading
 import av
 import streamlit.components.v1 as components
+import base64
 
 # Streamlit page settings
 st.set_page_config(page_title="Fatigue Detection", page_icon="🚥", layout="wide", initial_sidebar_state="collapsed")
@@ -51,10 +52,13 @@ HEAD_BEND_CONSEC_FRAMES = 10
 
 # Sound function
 def play_sound():
-    beep_url = "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
+    with open("beep.wav", "rb") as f:
+        data = f.read()
+        b64_encoded = base64.b64encode(data).decode()
+
     components.html(f"""
         <audio autoplay>
-            <source src="{beep_url}" type="audio/ogg">
+            <source src="data:audio/mp3;base64,{b64_encoded}" type="audio/mp3">
         </audio>
     """, height=0)
 
