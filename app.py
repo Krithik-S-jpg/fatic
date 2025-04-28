@@ -39,18 +39,12 @@ EYE_AR_CONSEC_FRAMES = 15
 MOUTH_OPEN_CONSEC_FRAMES = 7
 HEAD_BEND_CONSEC_FRAMES = 10
 
-# Sound function (new method)
-def play_sound(sound_file, volume):
-    sound_urls = {
-        "beep": "https://actions.google.com/sounds/v1/alarms/beep_short.ogg",
-        "buzzer": "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg",
-        "horn": "https://actions.google.com/sounds/v1/alarms/bugle_tune.ogg"
-    }
-    sound_url = sound_urls.get(sound_file.split('.')[0], sound_urls["beep"])
-    
+# Sound function
+def play_sound():
+    beep_url = "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
     components.html(f"""
-        <audio autoplay volume="{volume}">
-            <source src="{sound_url}" type="audio/ogg">
+        <audio autoplay>
+            <source src="{beep_url}" type="audio/ogg">
         </audio>
     """, height=0)
 
@@ -129,16 +123,6 @@ class FatigueDetectionModel:
 
         return fatigue_event
 
-# Sidebar
-with st.sidebar:
-    st.header("Alert Settings")
-    volume = st.slider("Volume", 0.0, 1.0, 0.5)
-    eye_alert = st.checkbox("Detect Eyes Closure", value=True)
-    head_alert = st.checkbox("Detect Head Down", value=True)
-    yawn_alert = st.checkbox("Detect Yawning", value=True)
-    all_alert = st.checkbox("Detect All", value=True)
-    sound_option = st.radio("Select Alert Sound", ["beep", "buzzer", "horn"])
-
 # Webcam Transformer
 class VideoTransformer(VideoTransformerBase):
     def __init__(self):
@@ -160,29 +144,20 @@ class VideoTransformer(VideoTransformerBase):
             fatigue_event = self.model.detect(landmark_points)
 
             if fatigue_event:
-                # Respect selected alerts
-                if (all_alert or
-                    (eye_alert and fatigue_event == "Eyes Closed") or
-                    (yawn_alert and fatigue_event == "Yawning") or
-                    (head_alert and fatigue_event == "Head Down")):
-
-                    threading.Thread(target=play_sound, args=(f"{sound_option}.wav", volume), daemon=True).start()
-                    alert_text = fatigue_event
-                    color = (0, 0, 255)
-
-            for point in landmark_points:
-                cv2.circle(img, point, 1, color, -1)
+                threading.Thread(target=play_sound, daemon=True).start()
+                alert_text = fatigue_event
+                color = (0, 0, 255)
 
             if alert_text:
-                cv2.putText(img, alert_text, (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                cv2.putText(img, alert_text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, color, 3)
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
 # Title
-st.title("🚗 Driving Fatigue Management")
+st.title("🚗 Driving Fatigue Detection (Simple)")
 st.title("")
 
-# Start webcam with streamlit-webrtc
+# Start webcam
 webrtc_streamer(
     key="example",
     video_transformer_factory=VideoTransformer,
