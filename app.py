@@ -91,10 +91,16 @@ with st.sidebar:
 
 # Transformer class for webcam
 class VideoTransformer(VideoTransformerBase):
-    def __init__(self):
+    def __init__(self, volume, eye_alert, head_alert, yawn_alert, all_alert, sound_option):
         self.eye_counter = 0
         self.mouth_open_counter = 0
         self.head_bend_counter = 0
+        self.volume = volume
+        self.eye_alert = eye_alert
+        self.head_alert = head_alert
+        self.yawn_alert = yawn_alert
+        self.all_alert = all_alert
+        self.sound_option = sound_option
 
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
@@ -114,10 +120,10 @@ class VideoTransformer(VideoTransformerBase):
             vertical_distance = head_bend_distance(landmark_points)
 
             # Detect Eyes Closure
-            if (eye_alert or all_alert) and avg_ear < EYE_AR_THRESHOLD:
+            if (self.eye_alert or self.all_alert) and avg_ear < EYE_AR_THRESHOLD:
                 self.eye_counter += 1
                 if self.eye_counter >= EYE_AR_CONSEC_FRAMES:
-                    threading.Thread(target=play_sound, args=(f"{sound_option}.wav", volume), daemon=True).start()
+                    threading.Thread(target=play_sound, args=(f"{self.sound_option}.wav", self.volume), daemon=True).start()
                     alert_text = "Eyes Closed!"
                     color = (0, 0, 255)
                     self.eye_counter = 0
@@ -125,10 +131,10 @@ class VideoTransformer(VideoTransformerBase):
                 self.eye_counter = 0
 
             # Detect Yawning
-            if (yawn_alert or all_alert) and mar > YAWN_AR_THRESHOLD:
+            if (self.yawn_alert or self.all_alert) and mar > YAWN_AR_THRESHOLD:
                 self.mouth_open_counter += 1
                 if self.mouth_open_counter >= MOUTH_OPEN_CONSEC_FRAMES:
-                    threading.Thread(target=play_sound, args=(f"{sound_option}.wav", volume), daemon=True).start()
+                    threading.Thread(target=play_sound, args=(f"{self.sound_option}.wav", self.volume), daemon=True).start()
                     alert_text = "Yawning Detected!"
                     color = (0, 0, 255)
                     self.mouth_open_counter = 0
@@ -136,10 +142,10 @@ class VideoTransformer(VideoTransformerBase):
                 self.mouth_open_counter = 0
 
             # Detect Head Down
-            if (head_alert or all_alert) and vertical_distance > HEAD_BEND_THRESHOLD:
+            if (self.head_alert or self.all_alert) and vertical_distance > HEAD_BEND_THRESHOLD:
                 self.head_bend_counter += 1
                 if self.head_bend_counter >= HEAD_BEND_CONSEC_FRAMES:
-                    threading.Thread(target=play_sound, args=(f"{sound_option}.wav", volume), daemon=True).start()
+                    threading.Thread(target=play_sound, args=(f"{self.sound_option}.wav", self.volume), daemon=True).start()
                     alert_text = "Head Down!"
                     color = (0, 0, 255)
                     self.head_bend_counter = 0
@@ -149,7 +155,8 @@ class VideoTransformer(VideoTransformerBase):
             for idx, point in enumerate(landmark_points):
                 cv2.circle(img, point, 1, color, -1)
 
-            cv2.putText(img, alert_text, (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+            if alert_text:
+                cv2.putText(img, alert_text, (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
@@ -160,6 +167,6 @@ st.title("")
 # Start webcam with streamlit-webrtc
 webrtc_streamer(
     key="example",
-    video_transformer_factory=VideoTransformer,
+    video_transformer_factory=lambda: VideoTransformer(volume, eye_alert, head_alert, yawn_alert, all_alert, sound_option),
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
 )
